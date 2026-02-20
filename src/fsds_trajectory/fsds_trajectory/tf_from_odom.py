@@ -9,10 +9,9 @@ from tf2_ros import TransformBroadcaster
 class TfFromOdom(Node):
     """
     The FSDS provides odometry messages with frame_id/child_frame_id but doesn't publish the dynamic TF on /tf.
+    To fix this, the program subscribes to an odometry topic and republishes the pose as a TF transform.
     
     This program is needed to set fsds\map as a fixed frame in RVIZ.
-
-    The program subscribes to an odometry topic and republishes the pose as a TF transform.
     """
 
     def __init__(self):
