@@ -39,4 +39,5 @@ After you've done this, you can launch RVIZ2 in another window:
 - Set durability policy to transient local.
 
 You SHOULD see a closed loop centreline which follows the circuit. This is your trajectory for MPC.
+
 ![An example of a path.](path_example.png)
