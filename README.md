@@ -38,3 +38,4 @@ After you've done this, you can launch RVIZ2 in another window:
 - Click on add, and select path. Set topic to `reference_path`
 
 You SHOULD see a closed loop centreline which follows the circuit. This is your trajectory for MPC.
+![An example of a path.](path_example.png)
