@@ -36,6 +36,7 @@ In another window run `tf_from_odom`:
 After you've done this, you can launch RVIZ2 in another window:
 - Once open, set fixed frame to `fsds/map`.
 - Click on add, and select path. Set topic to `reference_path`
+- Set durability policy to transient local.
 
 You SHOULD see a closed loop centreline which follows the circuit. This is your trajectory for MPC.
 ![An example of a path.](path_example.png)
