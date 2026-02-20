@@ -8,11 +8,11 @@ from tf2_ros import TransformBroadcaster
 
 class TfFromOdom(Node):
     """
-    Subscribes to an Odometry topic and republishes the pose as a TF transform.
+    The FSDS provides odometry messages with frame_id/child_frame_id but doesn't publish the dynamic TF on /tf.
+    
+    This program is needed to set fsds\map as a fixed frame in RVIZ.
 
-    This is needed when a system provides Odometry messages with frame_id/child_frame_id
-    but does not publish the corresponding dynamic TF on /tf. RViz requires TF frames
-    to exist in order to set a Fixed Frame and transform visualized data.
+    The program subscribes to an odometry topic and republishes the pose as a TF transform.
     """
 
     def __init__(self):
@@ -27,9 +27,10 @@ class TfFromOdom(Node):
         self.get_logger().info(f"Relaying TF from Odometry on: {odom_topic}")
 
     def odom_cb(self, msg: Odometry):
-        # Build TF: parent = odom.header.frame_id, child = odom.child_frame_id
+        # parent = odom.header.frame_id
+        # child = odom.child_frame_id
         t = TransformStamped()
-        t.header.stamp = msg.header.stamp  # use sim time stamp
+        t.header.stamp = msg.header.stamp  
         t.header.frame_id = msg.header.frame_id
         t.child_frame_id = msg.child_frame_id
 
