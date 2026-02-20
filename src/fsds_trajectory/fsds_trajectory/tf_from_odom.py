@@ -8,6 +8,8 @@ from tf2_ros import TransformBroadcaster
 
 class TfFromOdom(Node):
     """
+    tf_from_odom.py
+    
     The FSDS provides odometry messages with frame_id/child_frame_id but doesn't publish the dynamic TF on /tf.
     To fix this, the program subscribes to an odometry topic and republishes the pose as a TF transform.
     
