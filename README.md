@@ -32,6 +32,10 @@ In one window run the `trajectory_publisher`:
 
 In another window run `tf_from_odom`:
 - ros2 run fsds_trajectory tf_from_odom
+PLEASE NOTE: Depending on your FSDS launch configuration, the odometry topic may be namespaced. I have tested this and on some systems the bridge publishes `/testing_only/odom`, while in others it publishes `fsds/texting_only/odom`.
+You can overide the default `/testing_only/odom` by running this:
+- ros2 run fsds_trajectory tf_from_odom --ros-args -p odom_topic:=/fsds/testing_only/odom
+I will get around to updating `tf_from_odom` to automatically detect which odometry topic is being published to.
 
 After you've done this, you can launch RVIZ2 in another window:
 - Once open, set fixed frame to `fsds/map`.
