@@ -1,5 +1,5 @@
 rate_hz: 20
-topic_control: /control_command
+topic_control: /fsds/control_command
 topic_odom: /fsds/testing_only/odom
 
 log_csv: true
@@ -13,20 +13,20 @@ steps:
     brake: 0.0
 
   - name: full_throttle_straight
-    duration_s: 5.0
-    throttle: 1.0
+    duration_s: 9.0
+    throttle: 1
     steering: 0.0
     brake: 0.0
 
-  - name: brake_hard
+  - name: half_throttle_straight
+    duration_s: 5.0
+    throttle: 0.6
+    steering: 0.0
+    brake: 0.0
+  
+  - name: light_brake
     duration_s: 10.0
     throttle: 0.0
     steering: 0.0
-    brake: 0.3
-
-  - name: idle
-    duration_s: 2.0
-    throttle: 0.0
-    steering: 0.0
-    brake: 0.0
+    brake: 0.2
 

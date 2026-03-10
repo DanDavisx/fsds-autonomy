@@ -1,10 +1,11 @@
 """
-trajectory_publisher.py
+Trajectory Publisher
 
 This node publishes a reference driving path for the FSDS.
-The track layout can be described by a cone map CSV. This can have blue cones on one boundary, yellow cones on the opposite, and big orange cones signifying the starting line.
-This node will deterministically compute a centreline path from the cone geometry and use it as the reference trajectory for the MPC.
-Please refer to FSDS documentation on how to format a CSV.
+The track layout can be described by a cone map CSV. This CSV has blue cones on one boundary, yellow cones on the opposite, and big orange cones signifying the starting line.
+This node will compute a centreline path from the cone geometry and use it as the reference trajectory for the MPC.
+Please refer to FSDS documentation on how to format a cone map CSV.
+The circuit has to be a closed loop circuit. 
 
 You can call this function using:
 ros2 run fsds_trajectory trajectory_publisher --ros-args -p csv_path:=/yourcsvpath -p frame_id:=fsds/map
@@ -22,8 +23,9 @@ from rclpy.node import Node
 from nav_msgs.msg import Path as NavPath
 from geometry_msgs.msg import PoseStamped
 
-# Utility distance function, avoiding sqrt so it's faster.
-# Used to compare which cone is closer.
+
+# Finds squared distance between two 2d points.
+# Uses squared distance to compare which cone or midpoint is nearest.
 def dist2(a, b):
     dx = a[0] - b[0]
     dy = a[1] - b[1]
@@ -32,8 +34,8 @@ def dist2(a, b):
 class TrajectoryPublisher(Node):
     def __init__(self):
         super().__init__('trajectory_publisher')
-
-        # Params
+ 
+        # - PARAMETERS - 
         self.declare_parameter('csv_path', '') # Where the cone CSV file is.
         self.declare_parameter('frame_id', 'fsds/map') # Coordinate frame for the path.
         self.declare_parameter('topic', '/reference_path') # Where to publish the reference path.
@@ -42,52 +44,61 @@ class TrajectoryPublisher(Node):
         self.frame_id = self.get_parameter('frame_id').get_parameter_value().string_value
         topic = self.get_parameter('topic').get_parameter_value().Publisher_value if False else self.get_parameter('topic').value
 
-        # Publisher 
+        # - PUBLISHER - 
         from rclpy.qos import QoSProfile, DurabilityPolicy
-        qos = QoSProfile(depth=1) # Keep only last message in the queue.
-        qos.durability = DurabilityPolicy.TRANSIENT_LOCAL
+        qos = QoSProfile(depth=1)
+        qos.durability = DurabilityPolicy.TRANSIENT_LOCAL 
         self.pub = self.create_publisher(NavPath, topic, qos)
 
-        # Handle no path gracefully.
+        # - LOADING CONES FROM CSV -
+        # No CSV Provided
         if not csv_path:
-            self.get_logger().error("csv_path parameter is empty. Provide --ros-args -p csv_path:=/path/to/track.csv")
+            self.get_logger().error("No CSV path provided. Add --ros-args -p csv_path:=/path/to/track.csv")
             return
 
         # Load cones and split by colour.
         self.cones_blue, self.cones_yellow, self.cones_orange = self.load_cones(Path(csv_path))
         self.get_logger().info(f"Loaded cones: blue={len(self.cones_blue)}, yellow={len(self.cones_yellow)}, big_orange={len(self.cones_orange)}")
 
+        # - PATH CALCULATION -
         # Calculate the midpoints between the blue and yellow cones.
         midpoints = self.compute_midpoints_mutual_nn(self.cones_blue, self.cones_yellow)
         self.get_logger().info(f"Computed midpoint pairs: {len(midpoints)}")
 
         # Order the midpoints to produce the correct path.
-        midpoints_ordered = self.order_points_nearest_neighbor(midpoints)
+        midpoints_ordered = self.order_points_nearest_neighbour(midpoints)
+        # Reverse that list to allow for correct travel direction. 
+        midpoints_ordered = list(reversed(midpoints_ordered))
         self.get_logger().info(f"Midpoints ordered: {midpoints_ordered}")
-
-        # Close path so last point == first point.
+        # Close path so last point == first point which makes it closed loop circuit. 
         midpoints_closed = self.close_loop(midpoints_ordered)
 
+        # - PATH REFINEMENT -
         # Apply path smoothing.
-        midpoints_smooth = self.chaikin_smooth_closed(midpoints_closed, iterations=3)
+        midpoints_smooth = self.smooth_path(midpoints_closed, iterations=3)
 
-        # Resample to uniform spacing.
-        midpoints_final = self.resample_by_distance(midpoints_smooth, ds=0.5) # Set cone checkpoints to 0.5 m apart.
+        # Resample to uniform spacing. Cone checkpoints are 0.5 m apart.
+        midpoints_final = self.resample_by_distance(midpoints_smooth, ds=0.5)
 
+        # - PATH BUILD & PUBLISH- 
         # Build and publish the path.
         self.path_msg = self.build_path(midpoints_final)
         self.pub.publish(self.path_msg)
         self.timer = self.create_timer(2.0, self.timer_cb)
 
-    # This refreshes timestamps so Rviz doesnt treat it as stale.
+
+    # - REPUBLISH CALLBACK FUNCTION - 
+    # Refresh time stamps and republishes path.
+    # Fixes Rviz displaying issues.
     def timer_cb(self):
         stamp = self.get_clock().now().to_msg()
         self.path_msg.header.stamp = stamp
         for ps in self.path_msg.poses:
             ps.header.stamp = stamp
-        self.pub.publish(self.path_msg)
+        self.pub.publish(self.path_msg) 
 
-    # This reads the CSV file and seperates cones.
+    # - LOAD CONES FUNCTION - 
+    # This reads the CSV file and seperates the cones.
     def load_cones(self, csv_path: Path):
         blue, yellow, orange = [], [], []
         with csv_path.open('r', newline='') as f: 
@@ -96,7 +107,7 @@ class TrajectoryPublisher(Node):
                 if not row or row[0].startswith('#'):
                     continue
                 tag = row[0].strip()
-                x = float(row[1]); y = float(row[2]) # appends x,y to the correct list based on tag.
+                x = float(row[1]); y = float(row[2]) # append x and y for each tag type.
                 if tag == 'blue':
                     blue.append((x, y))
                 elif tag == 'yellow':
@@ -105,7 +116,8 @@ class TrajectoryPublisher(Node):
                     orange.append((x, y))
         return blue, yellow, orange
 
-    # This pairs blue cones with their nearest yellow cones.
+    # - COMPUTE MIDPOINTS WITH CONE MUTUAL NEAREST NEIGHBOUR -
+    # This pairs blue cones with their nearest yellow cones and computes the midpoint between them.
     def compute_midpoints_mutual_nn(self, blue, yellow):
         if not blue or not yellow:
             return []
@@ -133,6 +145,7 @@ class TrajectoryPublisher(Node):
 
         return midpoints
     
+    # - CLOSE LOOP HELPER FUNCTION -
     # Close loop helper. Simly ensures last point equals first.
     def close_loop(self, pts, eps=1e-6):
         if not pts:
@@ -145,41 +158,47 @@ class TrajectoryPublisher(Node):
             pts = list(pts) + [first]
         return pts
 
-    # Path smoothing.
+    # - PATH SMOOTHING -
     # This essentially slices every corner of a polygon to get a smoother curve.
-    def chaikin_smooth_closed(self, pts, iterations=3):
+    # Improves MPC accuracy by fixing jagged lines in the trajectory path.
+    # Chaikin's closed loop algorithm.
+    def smooth_path(self, pts, iterations=3):
 
         if len(pts) < 4:
             return pts
 
         pts = list(pts)
 
-        # Ensure closed (last==first).
+        # Ensure closed loop.
         pts = self.close_loop(pts)
 
         for _ in range(iterations):
             new_pts = []
-            # Iterate over segments, excluding the last duplicat point in the loop.
+            # Work through each segment.
             for i in range(len(pts) - 1):
                 p0 = pts[i]
                 p1 = pts[i + 1]
 
-                # For each segment p0->p1, generate Q and R points:
+                # Generate 2 new points for each segment, Q and R.
                 qx = 0.75 * p0[0] + 0.25 * p1[0]
                 qy = 0.75 * p0[1] + 0.25 * p1[1]
                 rx = 0.25 * p0[0] + 0.75 * p1[0]
                 ry = 0.25 * p0[1] + 0.75 * p1[1]
 
+                # Add these new points.
                 new_pts.append((qx, qy))
                 new_pts.append((rx, ry))
 
-            # Close again.
+            # Close the loop again.
             new_pts.append(new_pts[0])
             pts = new_pts
 
         return pts
 
-    # Allows resampling to more even spacing of cone checkpoints.
+
+    # - CHECKPOINT DISTANCE RESAMPLE FUNCTION -
+    # Resampling to space cone checkpoints evenly.
+    # Once again helps out with MPC accuracy.
     def resample_by_distance(self, pts, ds=0.5):
 
         if len(pts) < 2:
@@ -187,7 +206,7 @@ class TrajectoryPublisher(Node):
 
         pts = list(pts)
 
-        # Ensure closed.
+        # Guarantee closed loop.
         closed = (math.hypot(pts[0][0]-pts[-1][0], pts[0][1]-pts[-1][1]) < 1e-9)
         if not closed:
             pts.append(pts[0])
@@ -208,7 +227,7 @@ class TrajectoryPublisher(Node):
             dist_along = 0.0
             while acc + (seg_len - dist_along) >= ds:
                 remaining = ds - acc
-                t = (dist_along + remaining) / seg_len # Interpolation ratio along the segment where the next sample lands.
+                t = (dist_along + remaining) / seg_len 
                 xn = x0 + t * seg_dx
                 yn = y0 + t * seg_dy
                 out.append((xn, yn))
@@ -217,12 +236,14 @@ class TrajectoryPublisher(Node):
 
             acc += (seg_len - dist_along)
 
-        # Close.
+        # Close the resampled path.
         if out and (math.hypot(out[0][0]-out[-1][0], out[0][1]-out[-1][1]) > 1e-6):
             out.append(out[0])
 
         return out
 
+    # - BUILD ROS MESSAGE PATH FUNCTION -
+    # Converts the final list of resampled x,y points into a nav_msgs/Path message. 
     def build_path(self, points_xy):
         msg = NavPath()
         msg.header.frame_id = self.frame_id
@@ -240,14 +261,15 @@ class TrajectoryPublisher(Node):
 
         return msg
 
-    # Order the midpoints into a continuous loop to create a centreline. Using greedy ordering.
-    def order_points_nearest_neighbor(self, points):
+    # - MIDPOINT ORDERING FUNCTION -
+    # This turns what would be an unordered list of midpoints into a continuous loop using greedy ordering.
+    def order_points_nearest_neighbour(self, points):
         if len(points) < 3:
             return points
 
         pts = list(points)
 
-        # Choose deterministic start: lowest x, then lowest y.
+        # Start from lowest x, then lowest y.
         start_idx = min(range(len(pts)), key=lambda i: (pts[i][0], pts[i][1]))
         ordered = [pts.pop(start_idx)]
 

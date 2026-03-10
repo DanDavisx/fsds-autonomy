@@ -8,7 +8,7 @@ from tf2_ros import TransformBroadcaster
 
 class TfFromOdom(Node):
     """
-    tf_from_odom.py
+    TF FROM ODOMETRY
     
     The FSDS provides odometry messages with frame_id/child_frame_id but doesn't publish the dynamic TF on /tf.
     To fix this, the program subscribes to an odometry topic and republishes the pose as a TF transform.
@@ -19,28 +19,37 @@ class TfFromOdom(Node):
     def __init__(self):
         super().__init__('tf_from_odom')
 
+        #  - ROS PARAMETER ODOM_TOPIC - 
+        # Subscribes to the simulator's odometry topic.
         self.declare_parameter('odom_topic', '/testing_only/odom')
         odom_topic = self.get_parameter('odom_topic').value
 
+        # - TF BROADCASTER -
+        # Publishes transforms onto the /tf topic so that Rviz can see them.
         self._br = TransformBroadcaster(self)
 
+        # - ODOMETRY SUBSCRIBER -
+        # Listens to odometry topic. Runs odom_cb every time a new message arrives.
         self.create_subscription(Odometry, odom_topic, self.odom_cb, 10)
         self.get_logger().info(f"Relaying TF from Odometry on: {odom_topic}")
 
+    # - ODOMETRY CALLBACK -
+    # Converts the odometry pose into a TF transform and broadcasts it. 
     def odom_cb(self, msg: Odometry):
-        # parent = odom.header.frame_id
-        # child = odom.child_frame_id
-        t = TransformStamped()
-        t.header.stamp = msg.header.stamp  
-        t.header.frame_id = msg.header.frame_id
-        t.child_frame_id = msg.child_frame_id
+        t = TransformStamped() # Transform message
+        t.header.stamp = msg.header.stamp  # Timestamp from odometry message
+        t.header.frame_id = msg.header.frame_id # Parent frame (fsds/map)
+        t.child_frame_id = msg.child_frame_id # Child frame (fsds/car or similar)
 
+        # - GET POSITION -
         t.transform.translation.x = msg.pose.pose.position.x
         t.transform.translation.y = msg.pose.pose.position.y
         t.transform.translation.z = msg.pose.pose.position.z
 
+        # - GET ORIENTATION -
         t.transform.rotation = msg.pose.pose.orientation
 
+        # - BROADCAST IT -
         self._br.sendTransform(t)
 
 

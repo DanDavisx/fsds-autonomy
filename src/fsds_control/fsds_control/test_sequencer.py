@@ -31,22 +31,19 @@ class Step:
 
 class TestSequencer(Node):
     """
-    This will sequence a series of commands to the car.
-    -Loads a YAML plan containing ordered steps.
-    -Publishes ControlCommand at rate_hz.
-    -Advances through steps by duration.
+    This runs a series of commands from test_plan.yaml for testing purposes.
     """
 
     def __init__(self):
         super().__init__("test_sequencer")
 
-        #====Params====
+        # Parameters
         self.declare_parameter("plan_path", "")
         plan_path = str(self.get_parameter("plan_path").value).strip()
         if not plan_path:
-            raise RuntimeError("Missing required param: plan_path (path to YAML test plan).")
+            raise RuntimeError("Missing required parameter: plan_path")
 
-        # Load YAML plan.
+        # Load YAML plan
         plan = self._load_plan(plan_path)
 
         self.rate_hz: float = float(plan.get("rate_hz", 20))
@@ -58,23 +55,23 @@ class TestSequencer(Node):
 
         self.steps: List[Step] = self._parse_steps(plan.get("steps", []))
         if not self.steps:
-            raise RuntimeError("Plan has no steps. Add steps: [...] in YAML.")
+            raise RuntimeError("Plan has no steps. Add steps in the YAML file.")
 
-        #====ROS I/O====
+        #  ROS subs and pubs
         self.pub = self.create_publisher(ControlCommand, self.topic_control, 10)
         self.sub_odom = self.create_subscription(Odometry, self.topic_odom, self._on_odom, 50)
 
         period = 1.0 / max(1.0, self.rate_hz)
         self.timer = self.create_timer(period, self._tick)
 
-        # ====State====
+        # State
         self.start_wall = time.time()
         self.step_index = 0
         self.step_start_wall = time.time()
 
         self.last_odom: Optional[Odometry] = None
 
-        # CSV
+        # CSV file
         self.csv_file = None
         self.csv_writer = None
         if self.log_csv:
@@ -105,9 +102,9 @@ class TestSequencer(Node):
         self._announce_step()
 
     def destroy_node(self):
-        # Stop car on shutdown
+        # Stops the car on shutdown
         try:
-            self._publish_cmd(0.0, 0.0, 1.0)  # brake on exit.
+            self._publish_cmd(0.0, 0.0, 1.0)  # Brake when finished.
         except Exception:
             pass
 
@@ -123,12 +120,12 @@ class TestSequencer(Node):
         with open(path, "r") as f:
             data = yaml.safe_load(f)
         if not isinstance(data, dict):
-            raise RuntimeError("YAML plan must be a mapping/object at top level.")
+            raise RuntimeError("YAML plan must be a mapping/object.")
         return data
 
     def _parse_steps(self, raw_steps: Any) -> List[Step]:
         if not isinstance(raw_steps, list):
-            raise RuntimeError("YAML 'steps' must be a list.")
+            raise RuntimeError("YAML steps must be a list.")
         steps: List[Step] = []
         for i, s in enumerate(raw_steps):
             if not isinstance(s, dict):
@@ -145,7 +142,7 @@ class TestSequencer(Node):
 
         for st in steps:
             if st.duration_s <= 0.0:
-                raise RuntimeError(f"Step '{st.name}' has non-positive duration_s: {st.duration_s}")
+                raise RuntimeError(f"Step '{st.name}' has impossible duration_s: {st.duration_s}")
         return steps
 
     def _on_odom(self, msg: Odometry):
@@ -206,7 +203,7 @@ class TestSequencer(Node):
         self.csv_file.flush()
 
     def _tick(self):
-        # publish current step command.
+        # Publish current step command. 
         st = self._current_step()
         self._publish_cmd(st.throttle, st.steering, st.brake)
         self._log_row(st)
@@ -215,7 +212,7 @@ class TestSequencer(Node):
         if (time.time() - self.step_start_wall) >= st.duration_s:
             self.step_index += 1
             if self.step_index >= len(self.steps):
-                self.get_logger().info("Plan complete. Stopping vehicle (throttle=0, brake=1).")
+                self.get_logger().info("Plan complete. Stopping vehicle.")
                 self._publish_cmd(0.0, 0.0, 1.0)
                 rclpy.shutdown()
                 return
