@@ -2,13 +2,7 @@
 
 These are some ROS 2 (Humble) autonomy utilities for the FSDS (Formula Student Driverless Simulator), which can be found here: https://github.com/FS-Driverless/Formula-Student-Driverless-Simulator.
 
-Please follow the guidance on the FSDS repo to set up the simulator and WSL here: https://fs-driverless.github.io/Formula-Student-Driverless-Simulator/v2.2.0/. I will not discuss how to set up their simulator here. Getting the ros2_bridge to work using WSL can be a bit finicky, I may update this sometime to cover this.
-
-Important note: this is a work in progress and is not complete yet. This only creates a trajectory path from a CSV for now.
-
-## What’s included
-- `fsds_trajectory`: generates a deterministic centreline from FSDS cone CSV maps and publishes it as `nav_msgs/Path` on `/reference_path`.
-- `tf_from_odom`: relays `/testing_only/odom` into dynamic TF so `fsds/map` exists for RViz.
+Please follow the guidance on the FSDS repo to set up the simulator and WSL here: https://fs-driverless.github.io/Formula-Student-Driverless-Simulator/v2.2.0/. I will not discuss how to set up their simulator here. 
 
 ## Requirements
 - Ubuntu 22.04
@@ -16,11 +10,15 @@ Important note: this is a work in progress and is not complete yet. This only cr
 - FSDS simulator 
 - `fsds_ros2_bridge` Running 
 - A custom map CSV file. An example can be found in the FSDS repo: `maps/FormulaElectricBelgium` and is also included in 'fsds_trajectory'.
+- ADS-DV car selected in the simulator settings.json file. This will not work for default car. Read the guidance on how to change spawn vehicle.
 
-## How To Build
-From your ROS 2 workspace root:
-- colcon build --symlink-install
-- source install/setup.bash
+This autonomy stack comes with two packages: `fsds_trajectory` and `fsds_control`.
+
+# fsds-trajectory
+
+## What’s included
+- `trajectory_publisher`: generates a deterministic centreline from FSDS cone CSV maps and publishes it as `nav_msgs/Path` on `/reference_path`.
+- `tf_from_odom`: relays `/testing_only/odom` into dynamic TF so `fsds/map` exists for RViz.
 
 ## How To Run
 Remember to source ROS + your workspace!
@@ -47,3 +45,21 @@ After you've done this, you can launch RVIZ2 in another window:
 You SHOULD see a closed loop centreline which follows the circuit. This is your trajectory for MPC.
 
 ![An example of a path.](path_example.png)
+
+# fsds-control
+
+## What’s included
+- `car_model`: a kinematic bicycle model of the car, built using testing data and values that exist inside the Unreal Engine simulator.
+- `controller`: subscribes to `reference_path`, `/fsds/odom`, `/fsds/gss`. It runs MPC and publishes control commands to `/fsds/control_command`.
+- `mpc_optimiser`: builds and solves the MPC optimisation problem that generates steering, throttle, and brake commands for the car.
+
+## How To Run
+Remember to source ROS + your workspace!
+
+In a new terminal, with your simulator, trajectory publisher, and ROS bridge all running, run the `mpc_controller`:
+- ros2 run fsds_control mpc_controller
+
+Parameters can be overriden at launch, for example:
+- ros2 run fsds_control mpc_controller --ros-args -p horizon:=20 -p target_speed:=7.0  
+
+If all goes well, the car SHOULD begin navigating around the ciruit!
