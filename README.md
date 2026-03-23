@@ -14,13 +14,13 @@ Please follow the guidance on the FSDS repo to set up the simulator and WSL here
 
 This autonomy stack comes with two packages: `fsds_trajectory` and `fsds_control`.
 
-# fsds-trajectory
+## fsds-trajectory
 
-## What’s included
+### What’s included
 - `trajectory_publisher`: generates a deterministic centreline from FSDS cone CSV maps and publishes it as `nav_msgs/Path` on `/reference_path`.
 - `tf_from_odom`: relays `/testing_only/odom` into dynamic TF so `fsds/map` exists for RViz.
 
-## How To Run
+### How To Run
 Remember to source ROS + your workspace!
 
 Make sure the FSDS simulator is running, and `fsds_ros2_bridge` has successfully connected. You'll know it's connected because the arrow-key controls for the car will be disabled + there will be a message in the command-line. 
@@ -46,14 +46,14 @@ You SHOULD see a closed loop centreline which follows the circuit. This is your 
 
 ![An example of a path.](path_example.png)
 
-# fsds-control
+## fsds-control
 
-## What’s included
+### What’s included
 - `car_model`: a kinematic bicycle model of the car, built using testing data and values that exist inside the Unreal Engine simulator.
 - `controller`: subscribes to `reference_path`, `/fsds/odom`, `/fsds/gss`. It runs MPC and publishes control commands to `/fsds/control_command`.
 - `mpc_optimiser`: builds and solves the MPC optimisation problem that generates steering, throttle, and brake commands for the car.
 
-## How To Run
+### How To Run
 Remember to source ROS + your workspace!
 
 In a new terminal, with your simulator, trajectory publisher, and ROS bridge all running, run the `mpc_controller`:
