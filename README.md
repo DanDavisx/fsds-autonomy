@@ -4,6 +4,8 @@ These are some ROS 2 (Humble) autonomy utilities for the FSDS (Formula Student D
 
 Please follow the guidance on the FSDS repo to set up the simulator and WSL here: https://fs-driverless.github.io/Formula-Student-Driverless-Simulator/v2.2.0/. I will not discuss how to set up their simulator here. 
 
+This project omits any form of perception or mapping pipeline, which is why we're generating a centre-line from a CSV. Subsequently, you won't be able to use this for the DEFAULT simulator maps, only customs ones loaded from a CSV. I'm pretty sure that the default map CSV files are hidden, or at least I haven't been able to find them.
+
 ### Requirements
 - Ubuntu 22.04
 - ROS 2 Humble 
