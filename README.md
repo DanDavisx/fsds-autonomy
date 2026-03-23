@@ -4,7 +4,7 @@ These are some ROS 2 (Humble) autonomy utilities for the FSDS (Formula Student D
 
 Please follow the guidance on the FSDS repo to set up the simulator and WSL here: https://fs-driverless.github.io/Formula-Student-Driverless-Simulator/v2.2.0/. I will not discuss how to set up their simulator here. 
 
-## Requirements
+### Requirements
 - Ubuntu 22.04
 - ROS 2 Humble 
 - FSDS simulator 
