@@ -19,16 +19,15 @@ from .mpc_optimiser import KinematicBicycleMPC
 - CONTROLLER -
 This is the ROS2 node that brings everything together. 
 
-- RUN THE CONTROLLER -
 This is your main entry point to running the model predictive control in the sim.
 
 With your simulator, trajectory publisher, and ROS bridge all running, do:
 
-    ros2 run your_package_name controller.launch.py
+    ros2 run fsds_control mpc_controller
 
 Parameters can be overriden at launch, for example:
 
-    ros2 run your_package_name controller --ros-args -p target_speed:=12.0 
+    ros2 run fsds_control mpc_controller --ros-args -p horizon:=20 -p dt:=0.1 -p target_speed:=7.0  
 
 - INPUT OUTPUT-
 It subscribes to: 
