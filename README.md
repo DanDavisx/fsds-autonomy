@@ -9,8 +9,10 @@ This project omits any form of perception or mapping pipeline, which is why we'r
 ### Requirements
 - Ubuntu 22.04
 - ROS 2 Humble 
-- FSDS simulator 
-- `fsds_ros2_bridge` Running 
+- FSDS simulator
+- CasADi + numpy
+- `fs_msgs` which is included with `fsds_ros2_bridge`. If the bridge isn't built and sourced then `fsds_control` will not compile.
+- `fsds_ros2_bridge` running
 - A custom map CSV file. An example can be found in the FSDS repo: `maps/FormulaElectricBelgium` and is also included in 'fsds_trajectory'.
 - ADS-DV car selected in the simulator settings.json file. This will not work for default car. Read the guidance on how to change spawn vehicle.
 
