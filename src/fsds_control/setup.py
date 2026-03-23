@@ -25,7 +25,7 @@ setup(
     entry_points={
         'console_scripts': [
             'test_sequencer = fsds_control.test_sequencer:main',
-            'mpc_controller = fsds_control.mpc_controller:main',
+            'mpc_controller = fsds_control.controller:main',
         ],
     },
 )

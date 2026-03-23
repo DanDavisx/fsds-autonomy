@@ -11,11 +11,11 @@ Important note: this is a work in progress and is not complete yet. This only cr
 - `tf_from_odom`: relays `/testing_only/odom` into dynamic TF so `fsds/map` exists for RViz.
 
 ## Requirements
-- Ubuntu 22.04 running on WSL2
-- ROS 2 Humble running on WSL2
-- FSDS simulator running on Windows
-- `fsds_ros2_bridge` running in WSL (publishing `/testing_only/odom`)
-- A custom map CSV file. An example can be found in the FSDS repo: `maps/FormulaElectricBelgium`.
+- Ubuntu 22.04
+- ROS 2 Humble 
+- FSDS simulator 
+- `fsds_ros2_bridge` Running 
+- A custom map CSV file. An example can be found in the FSDS repo: `maps/FormulaElectricBelgium` and is also included in 'fsds_trajectory'.
 
 ## How To Build
 From your ROS 2 workspace root:
