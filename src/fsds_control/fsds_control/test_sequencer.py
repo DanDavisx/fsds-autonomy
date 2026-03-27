@@ -37,7 +37,7 @@ class TestSequencer(Node):
     def __init__(self):
         super().__init__("test_sequencer")
 
-        # Parameters
+        # Params
         self.declare_parameter("plan_path", "")
         plan_path = str(self.get_parameter("plan_path").value).strip()
         if not plan_path:

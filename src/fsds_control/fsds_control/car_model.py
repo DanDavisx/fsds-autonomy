@@ -17,7 +17,7 @@ This model collapses the four wheels into two, hence why it's called a bicycle m
 ignores forces entirely, assuming the wheels can never slip.
 
 This is a reasonable approximation at the speeds and lateral accelerations seen in 
-FOrmula Student. However at the limit of grip, this solution could fall short.
+FOrmula Student. However at very high speeds at the limit of grip, this solution can and will fall short.
 
 - STATE AND CONTROLS -
 The model tracks four state variables per timestep:
@@ -43,14 +43,15 @@ testing data.
 class KinematicBicycleModel:
 
     # Kinematic bicycle vehicle model used by the MPC.
-    # Values taken from Unreal Engine Simulator and testing.
-
-    L = 1.581872
-    DELTA_MAX = math.radians(25.0)
-    V_MAX = 25.346969892 # Car is faster than this but will never go beyond such a speed.
-    K_SPEED = 0.158
-    K_BRAKE = 7.5
-    THROTTLE_EXP = 1.0
+    # Values taken/inferred from Unreal Engine Simulator and testing.
+    
+    # ADS-DV Car
+    L = 1.581872 # Wheelbase in meters
+    DELTA_MAX = math.radians(25.0) # Max steer angle
+    V_MAX = 25.346969892 # Car is faster than this but will never go beyond such a speed. This is the max speed before hitting world boundary.
+    K_SPEED = 0.158 # Acceleration gain
+    K_BRAKE = 7.5 # Braking strength. Higher = stronger brake.
+    THROTTLE_EXP = 1.0 # Throttle response curve. Linear.
 
     def __init__(self, dt: float = 0.1):
         self.dt = dt

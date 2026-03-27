@@ -77,7 +77,7 @@ class KinematicBicycleMPC:
         # - PARAMETER VECTOR - 
         # Parameters:[x0, y0, yaw0, v0, a_lat_limit,ref_x[0:N], ref_y[0:N], ref_yaw[0:N], ref_v[0:N], ref_kappa[0:N]]
         n_p = 5 + 5 * N
-        p   = ca.SX.sym('p', n_p)
+        p = ca.SX.sym('p', n_p)
 
         # Unpack the parameter vector into named variables
         a_lat_limit = p[4]
@@ -90,9 +90,9 @@ class KinematicBicycleMPC:
         # - COST FUNCTION WEIGHTS -
         # These determine how much the solver cares about each objective.
 
-        W_CTE = 1.0 # cross track error 
-        W_HEADING = 1.0 # heading alignment with the path
-        W_SPEED = 2.5 # tracking the speed reference
+        W_CTE = 3.0 # cross track error 
+        W_HEADING = 2.5 # heading alignment with the path
+        W_SPEED = 1.0 # tracking the speed reference
         W_STEER = 0.5 # steering magnitude
         W_THROTTLE = 0.1 # throttle magnitude
         W_BRAKE = 0.6 # brake magnitude
@@ -103,7 +103,7 @@ class KinematicBicycleMPC:
         W_ALAT_EXCESS = 12.0 # lateral acceleration over the limit
         W_CURVE_THROTTLE = 0.75 # throttle in high curvature sections
 
-        cost        = 0.0
+        cost = 0.0
         constraints = []
 
         constraints.append(X[:, 0] - p[:4])
@@ -206,7 +206,7 @@ class KinematicBicycleMPC:
         # - NLP ASSEMBLY AND COMPILATION - 
 
         opt_vars = ca.vertcat(ca.reshape(X, -1, 1), ca.reshape(U, -1, 1))
-        g        = ca.vertcat(*constraints)
+        g = ca.vertcat(*constraints)
 
         nlp = {'f': cost, 'x': opt_vars, 'g': g, 'p': p}
 
@@ -222,13 +222,13 @@ class KinematicBicycleMPC:
         self._N = N
         self._f = f
 
-        n_states       = 4 * (N + 1)
+        n_states = 4 * (N + 1)
         self._u_offset = n_states
-        self._lbx      = [-ca.inf] * n_states + [-1.0, 0.0, 0.0] * N
-        self._ubx      = [ ca.inf] * n_states + [ 1.0, 1.0, 1.0] * N
-        n_eq           = 4 * (N + 1)
-        self._lbg      = [0.0] * n_eq
-        self._ubg      = [0.0] * n_eq
+        self._lbx = [-ca.inf] * n_states + [-1.0, 0.0, 0.0] * N
+        self._ubx = [ ca.inf] * n_states + [ 1.0, 1.0, 1.0] * N
+        n_eq = 4 * (N + 1)
+        self._lbg = [0.0] * n_eq
+        self._ubg = [0.0] * n_eq
 
     # - SOLVE MPC -
 
@@ -275,8 +275,8 @@ class KinematicBicycleMPC:
             opt = sol['x'].full().flatten()
             base = self._u_offset
             steer_cmd = float(opt[base])
-            throttle  = float(opt[base + 1])
-            brake     = float(opt[base + 2])
+            throttle = float(opt[base + 1])
+            brake = float(opt[base + 2])
             return (
                 clamp(steer_cmd, -1.0, 1.0),
                 clamp(throttle, 0.0, throttle_ub),

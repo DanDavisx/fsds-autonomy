@@ -191,9 +191,9 @@ class MPCController(Node):
         self.declare_parameter('target_speed', 16.0) # straight line target speed (m/s)
         self.declare_parameter('min_speed', 4.0) # minimum speed for curvature_to_speed (m/s)
         self.declare_parameter('max_speed', 25.0) # maximumum speed for curvature_to_speed (m/s)
-        self.declare_parameter('corner_curvature_threshold', 0.06) # 1/m, for brake blending
-        self.declare_parameter('a_lat_max', 4.0) # lateral acceleration limit (m/s^2)
-        self.declare_parameter('speed_lookahead', 20) # number of waypoints to look ahead for speed planning
+        self.declare_parameter('corner_curvature_threshold', 0.20) # 1/m, for brake blending
+        self.declare_parameter('a_lat_max', 2.5) # lateral acceleration limit (m/s^2)
+        self.declare_parameter('speed_lookahead', 25) # number of waypoints to look ahead for speed planning
         self.declare_parameter('horizon', 25) # MPC prediction horizon steps
         self.declare_parameter('dt', 0.1) # MPC timestep (s)
         self.declare_parameter('rate_hz', 20.0) # control loop rate (hz)
@@ -204,13 +204,14 @@ class MPCController(Node):
         self.declare_parameter('estop_cte_m', 1.5) # cross track error emergency stop threshold (m)
         self.declare_parameter('estop_heading_deg', 60.0) # heading error emergency stop threshold (degs)
         self.declare_parameter('estop_stop_steer', 0.0) # to fix steering on stop
-        self.declare_parameter('straight_brake_max', 0.55) # max braking on straight
-        self.declare_parameter('corner_brake_max', 0.12) # max brake mid corner
+        self.declare_parameter('straight_brake_max', 1.0) # max braking on straight
+        self.declare_parameter('corner_brake_max', 0.15) # max brake mid corner
         self.declare_parameter('brake_rate_up', 0.04) # brake application rate per tick
-        self.declare_parameter('brake_rate_down', 0.08) # brake release rate per tick
+        self.declare_parameter('brake_rate_down', 0.12) # brake release rate per tick
         self.declare_parameter('throttle_rate_up', 0.08) # throttle application rate per tick
         self.declare_parameter('throttle_rate_down', 0.12) # throttle release rate per tick
         self.declare_parameter('steer_turn_threshold', 0.18) # steering magnitude per tick
+        self.declare_parameter('brake_curvature_deadband', 0.085) # deadband for brake on straight vs brake on corner
 
         target_speed = self.get_parameter('target_speed').value
         min_speed = self.get_parameter('min_speed').value
@@ -252,6 +253,7 @@ class MPCController(Node):
         self.throttle_rate_up = float(self.get_parameter('throttle_rate_up').value)
         self.throttle_rate_down = float(self.get_parameter('throttle_rate_down').value)
         self.steer_turn_threshold = float(self.get_parameter('steer_turn_threshold').value)
+        self.brake_curvature_deadband = float(self.get_parameter('brake_curvature_deadband').value)
 
         self.estop_cte_m = float(estop_cte_m)
         self.estop_heading_rad = math.radians(float(estop_heading_deg))
@@ -361,17 +363,19 @@ class MPCController(Node):
             # the car brakes before the corner enters the MPC window.
             kappa_idx = (ref_idx + self.speed_lookahead) % n
             kappa = get_path_curvature(self.path_xy, kappa_idx)
+            kappa_mag = abs(kappa)
             lookahead_curvatures.append(kappa)
-
+            
             # Speed target
-            v_ref_k = curvature_to_speed(
-                curvature=kappa,
-                v_min=self.min_speed,
-                v_max=self.max_speed,
-                a_lat_max=self.a_lat_max,
-            )
-
-            if abs(kappa) >= self.corner_curvature_threshold:
+            if kappa_mag < self.brake_curvature_deadband:
+                v_ref_k = self.base_target_speed
+            else:
+                v_ref_k = curvature_to_speed(
+                    curvature=kappa,
+                    v_min=self.min_speed,
+                    v_max=self.max_speed,
+                    a_lat_max=self.a_lat_max,
+                )
                 v_ref_k = min(v_ref_k, self.base_target_speed)
 
             ref_v.append(v_ref_k)
@@ -383,12 +387,14 @@ class MPCController(Node):
         cte0 = ex0 * math.sin(ref_yaw[0]) - ey0 * math.cos(ref_yaw[0])
         he0  = wrap_to_pi(yaw0 - ref_yaw[0])
 
+        # - CROSS TRACK ERROR EMERGENCY STOP -
         if abs(cte0) > self.estop_cte_m:
             self._trigger_estop(
                 f"CROSS-TRACK ERROR TOO HIGH: |{cte0:.3f}| METRES > {self.estop_cte_m:.3f} METRES. SAFETY STOP TRIGGERED."
             )
             return
 
+        # - HEADING ERROR EMERGENCY STOP - 
         if abs(he0) > self.estop_heading_rad:
             self._trigger_estop(
                 f"HEADING ERROR TOO HIGH: |{math.degrees(he0):.1f}| DEG > "
@@ -406,9 +412,11 @@ class MPCController(Node):
         )
 
         # - BRAKE AND THROTTLE CAPS -
-        # preview curvature is the worst curvature observed in the next 16 lookahead samples.
+        # preview curvature is the worst curvature observed in the next 20 lookahead samples.
         # throttle and brake caps to limit throttle and brake entering and exiting corners
-        preview_curvature = max((abs(k) for k in lookahead_curvatures[:min(16, len(lookahead_curvatures))]), default=0.0)
+        preview_samples = sorted((abs(k) for k in lookahead_curvatures[:min(16, len(lookahead_curvatures))]), reverse=True)
+        top_n = preview_samples[:4]
+        preview_curvature = sum(top_n) / max(len(top_n), 1)
         brake_cap = self._compute_brake_limit(preview_curvature, self.u_prev[0])
         throttle_cap = 0.70 if brake_cap > 0.3 else 0.95
 
