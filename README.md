@@ -4,7 +4,7 @@ These are some ROS 2 (Humble) autonomy utilities for the FSDS (Formula Student D
 
 Please follow the guidance on the FSDS repo to set up the simulator and WSL here: https://fs-driverless.github.io/Formula-Student-Driverless-Simulator/v2.2.0/. I will not discuss how to set up their simulator here. 
 
-This project omits any form of perception or mapping pipeline, which is why we're generating a centre-line from a CSV. Subsequently, you won't be able to use this for the DEFAULT simulator maps, only customs ones loaded from a CSV. I'm pretty sure that the default map CSV files are hidden, or at least I haven't been able to find them.
+This project omits any form of perception or mapping pipeline, which is why we're generating a centre-line from a cone CSV. Subsequently, you won't be able to use this for the DEFAULT simulator maps, only custom ones loaded from a CSV. The default maps are unity asset files and are loaded differently. There is a map builder available that builds circuits and exports them as a cone CSV for FSDS here: https://github.com/mvanlobensels/random-track-generator
 
 ### Requirements
 - Ubuntu 22.04
@@ -12,7 +12,7 @@ This project omits any form of perception or mapping pipeline, which is why we'r
 - FSDS simulator
 - CasADi + numpy
 - `fsds_ros2_bridge` running
-- A custom map CSV file. An example can be found in the FSDS repo: `maps/FormulaElectricBelgium` and is also included in 'fsds_trajectory'.
+- A custom map CSV file. An example can be found in the FSDS repo: `maps/FormulaElectricBelgium` and is also included in the `fsds_trajectory` package.
 - ADS-DV car selected in the simulator settings.json file. This will not work for default car. Read the guidance on how to change spawn vehicle.
 
 This autonomy stack comes with two packages: `fsds_trajectory` and `fsds_control`.
@@ -22,6 +22,7 @@ This autonomy stack comes with two packages: `fsds_trajectory` and `fsds_control
 ### What’s included
 - `trajectory_publisher`: generates a centreline from FSDS cone CSV maps and publishes it as `nav_msgs/Path` on `/reference_path`.
 - `tf_from_odom`: relays `/testing_only/odom` into dynamic TF so `fsds/map` exists for RViz.
+- Some track CSVs are also included in the `maps` folder.
 
 ### How To Run
 Remember to source ROS + your workspace!
@@ -45,7 +46,7 @@ After you've done this, you can launch RVIZ2 in another window:
 - Click on add, and select path. Set topic to `reference_path`
 - Set durability policy to transient local.
 
-You SHOULD see a closed loop centreline which follows the circuit. This is your trajectory for MPC.
+You SHOULD see a closed loop centre-line which follows the circuit. This is your trajectory for MPC.
 
 ![An example of a path.](path_example.png)
 
@@ -63,6 +64,8 @@ In a new terminal, with your simulator, trajectory publisher, and ROS bridge all
 - ros2 run fsds_control mpc_controller
 
 Parameters can be overriden at launch, for example:
-- ros2 run fsds_control mpc_controller --ros-args -p horizon:=20 -p target_speed:=7.0  
+- ros2 run fsds_control mpc_controller --ros-args -p horizon:=20 -p target_speed:=7.0
+
+The default parameters have been carefully tested on the provided tracks. Changing them may introduce unexpected behaviour. 
 
 If all goes well, the car SHOULD begin navigating around the ciruit!
