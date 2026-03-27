@@ -20,7 +20,7 @@ This autonomy stack comes with two packages: `fsds_trajectory` and `fsds_control
 ## fsds-trajectory
 
 ### What’s included
-- `trajectory_publisher`: generates a deterministic centreline from FSDS cone CSV maps and publishes it as `nav_msgs/Path` on `/reference_path`.
+- `trajectory_publisher`: generates a centreline from FSDS cone CSV maps and publishes it as `nav_msgs/Path` on `/reference_path`.
 - `tf_from_odom`: relays `/testing_only/odom` into dynamic TF so `fsds/map` exists for RViz.
 
 ### How To Run
