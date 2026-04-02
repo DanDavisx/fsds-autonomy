@@ -26,6 +26,7 @@ setup(
         'console_scripts': [
             'test_sequencer = fsds_control.test_sequencer:main',
             'mpc_controller = fsds_control.controller:main',
+            'evaluation_logger = fsds_control.evaluation_logger:main',
         ],
     },
 )

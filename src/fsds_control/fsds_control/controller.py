@@ -2,7 +2,12 @@
 from __future__ import annotations
 
 import math
+import time
+from collections import deque
 import numpy as np
+
+import json
+from std_msgs.msg import String
 
 import rclpy
 from rclpy.node import Node
@@ -197,13 +202,16 @@ class MPCController(Node):
         self.declare_parameter('horizon', 25) # MPC prediction horizon steps
         self.declare_parameter('dt', 0.1) # MPC timestep (s)
         self.declare_parameter('rate_hz', 20.0) # control loop rate (hz)
+
         self.declare_parameter('topic_path', '/reference_path') 
         self.declare_parameter('topic_odom', '/fsds/testing_only/odom')
         self.declare_parameter('topic_gss', '/fsds/gss')
         self.declare_parameter('topic_control', '/fsds/control_command')
+
         self.declare_parameter('estop_cte_m', 1.5) # cross track error emergency stop threshold (m)
         self.declare_parameter('estop_heading_deg', 60.0) # heading error emergency stop threshold (degs)
         self.declare_parameter('estop_stop_steer', 0.0) # to fix steering on stop
+
         self.declare_parameter('straight_brake_max', 1.0) # max braking on straight
         self.declare_parameter('corner_brake_max', 0.15) # max brake mid corner
         self.declare_parameter('brake_rate_up', 0.04) # brake application rate per tick
@@ -212,6 +220,11 @@ class MPCController(Node):
         self.declare_parameter('throttle_rate_down', 0.12) # throttle release rate per tick
         self.declare_parameter('steer_turn_threshold', 0.18) # steering magnitude per tick
         self.declare_parameter('brake_curvature_deadband', 0.085) # deadband for brake on straight vs brake on corner
+
+        self.declare_parameter('timing_log_period_sec', 1.0) 
+        self.declare_parameter('timing_window_size', 100) 
+        self.declare_parameter('warn_on_deadline_miss', True) # warn if solve time exceeds control budget
+        self.declare_parameter('topic_debug', '/mpc_debug')
 
         target_speed = self.get_parameter('target_speed').value
         min_speed = self.get_parameter('min_speed').value
@@ -226,6 +239,12 @@ class MPCController(Node):
         N = self.get_parameter('horizon').value
         dt = self.get_parameter('dt').value
         rate_hz = self.get_parameter('rate_hz').value
+
+        timing_log_period_sec = self.get_parameter('timing_log_period_sec').value
+        timing_window_size = self.get_parameter('timing_window_size').value
+        warn_on_deadline_miss = self.get_parameter('warn_on_deadline_miss').value
+        topic_debug = self.get_parameter('topic_debug').value
+
         topic_path = self.get_parameter('topic_path').value
         topic_odom = self.get_parameter('topic_odom').value
         topic_gss = self.get_parameter('topic_gss').value
@@ -239,6 +258,9 @@ class MPCController(Node):
         self.mpc = KinematicBicycleMPC(model=self.model, N=N, dt=dt, target_speed=target_speed)
         self.N = N
         self.dt = dt
+        self.rate_hz = float(rate_hz)
+        self.control_period_sec = 1.0 / self.rate_hz
+        self.control_budget_ms = self.control_period_sec * 1000.0
         self.base_target_speed = float(target_speed)
         self.min_speed = float(min_speed)
         self.max_speed = float(max_speed)
@@ -263,7 +285,21 @@ class MPCController(Node):
         self.path_xy: np.ndarray | None = None
         self.odom: Odometry | None = None
         self.gss: TwistWithCovarianceStamped | None = None
-        self.u_prev = [0.0, 0.25, 0.0] # Warm start for MPC
+        self.u_prev = [0.0, 0.25, 0.0] 
+
+        self.timing_log_period_sec = float(timing_log_period_sec)
+        self.warn_on_deadline_miss = bool(warn_on_deadline_miss)
+
+        window_size = int(timing_window_size)
+        self.solve_times_ms = deque(maxlen=window_size)
+        self.tick_times_ms = deque(maxlen=window_size)
+
+        self.total_solves = 0
+        self.solve_failures = 0
+        self.deadline_misses = 0
+        self.max_solve_time_ms = 0.0
+        self.max_tick_time_ms = 0.0
+        self.last_timing_log_time = time.perf_counter()
 
         path_qos = QoSProfile(depth=1)
         path_qos.durability = DurabilityPolicy.TRANSIENT_LOCAL
@@ -272,9 +308,60 @@ class MPCController(Node):
         self.create_subscription(TwistWithCovarianceStamped, topic_gss, self._gss_cb, 10)
 
         self.pub = self.create_publisher(ControlCommand, topic_control, 10)
+        self.debug_pub = self.create_publisher(String, topic_debug, 10)
         self.create_timer(1.0 / rate_hz, self._tick)
 
         self.get_logger().info("MPC controller ready. Waiting for path and odometry...")
+
+    def _publish_debug(
+        self,
+        timestamp_sec: float,
+        waypoint_idx: int,
+        x: float,
+        y: float,
+        yaw: float,
+        speed: float,
+        ref_speed: float,
+        cte: float,
+        heading_error_rad: float,
+        steer_cmd: float,
+        throttle: float,
+        brake: float,
+        solve_time_ms: float | None,
+        tick_time_ms: float | None,
+        solver_success: bool,
+        solver_status: str,
+        solver_iters: int | None,
+        deadline_miss: bool,
+    ):
+        msg = String()
+        payload = {
+            'timestamp_sec': float(timestamp_sec),
+            'waypoint_idx': int(waypoint_idx),
+            'x': float(x),
+            'y': float(y),
+            'yaw_rad': float(yaw),
+            'yaw_deg': float(math.degrees(yaw)),
+            'speed_mps': float(speed),
+            'ref_speed_mps': float(ref_speed),
+            'cte_m': float(cte),
+            'path_length_points': 0 if self.path_xy is None else int(len(self.path_xy)),
+            'heading_error_rad': float(heading_error_rad),
+            'heading_error_deg': float(math.degrees(heading_error_rad)),
+            'steer_cmd': float(steer_cmd),
+            'throttle_cmd': float(throttle),
+            'brake_cmd': float(brake),
+            'solve_time_ms': None if solve_time_ms is None else float(solve_time_ms),
+            'tick_time_ms': None if tick_time_ms is None else float(tick_time_ms),
+            'solver_success': bool(solver_success),
+            'solver_status': str(solver_status),
+            'solver_iters': None if solver_iters is None else int(solver_iters),
+            'deadline_miss': bool(deadline_miss),
+            'estop_active': bool(self.estop_active),
+            
+        }
+        msg.data = json.dumps(payload)
+        self.debug_pub.publish(msg)
 
     def _path_cb(self, msg: Path):
         if not msg.poses:
@@ -298,6 +385,28 @@ class MPCController(Node):
     def _hold_estop(self):
         self._publish(self.estop_stop_steer, 0.0, 1.0)
 
+        now_msg = self.get_clock().now().nanoseconds / 1e9
+        self._publish_debug(
+            timestamp_sec=now_msg,
+            waypoint_idx=-1,
+            x=0.0 if self.odom is None else float(self.odom.pose.pose.position.x),
+            y=0.0 if self.odom is None else float(self.odom.pose.pose.position.y),
+            yaw=0.0 if self.odom is None else float(quaternion_to_yaw(self.odom.pose.pose.orientation)),
+            speed=0.0 if self.gss is None else float(self.gss.twist.twist.linear.x),
+            ref_speed=0.0,
+            cte=0.0,
+            heading_error_rad=0.0,
+            steer_cmd=self.estop_stop_steer,
+            throttle=0.0,
+            brake=1.0,
+            solve_time_ms=None,
+            tick_time_ms=None,
+            solver_success=False,
+            solver_status='ESTOP_HOLD',
+            solver_iters=None,
+            deadline_miss=False,
+        )
+
     # - BRAKE LIMIT FOR UPCOMING CORNER -
 
     def _compute_brake_limit(self, upcoming_curvature: float, steer_cmd_guess: float) -> float:
@@ -317,9 +426,68 @@ class MPCController(Node):
             return min(cmd, prev + up_step)
         return max(cmd, prev - down_step)
 
+    def _record_solver_stats(self):
+        stats = getattr(self.mpc, 'last_solve_stats', None)
+        if not stats:
+            return
+
+        solve_time_ms = stats.get('solve_time_ms', None)
+        success = bool(stats.get('success', False))
+        return_status = stats.get('return_status', 'UNKNOWN')
+        iter_count = stats.get('iter_count', None)
+
+        if solve_time_ms is not None:
+            self.solve_times_ms.append(float(solve_time_ms))
+            self.max_solve_time_ms = max(self.max_solve_time_ms, float(solve_time_ms))
+
+            if solve_time_ms > self.control_budget_ms:
+                self.deadline_misses += 1
+                if self.warn_on_deadline_miss:
+                    self.get_logger().warn(
+                        f"MPC deadline miss: solve_time={solve_time_ms:.2f} ms > "
+                        f"budget={self.control_budget_ms:.2f} ms "
+                        f"(status={return_status}, iters={iter_count})",
+                        throttle_duration_sec=0.5,
+                    )
+
+        self.total_solves += 1
+        if not success:
+            self.solve_failures += 1
+
+    def _log_timing_summary_if_due(self):
+        now = time.perf_counter()
+        if now - self.last_timing_log_time < self.timing_log_period_sec:
+            return
+
+        self.last_timing_log_time = now
+
+        avg_solve = sum(self.solve_times_ms) / len(self.solve_times_ms) if self.solve_times_ms else 0.0
+        avg_tick = sum(self.tick_times_ms) / len(self.tick_times_ms) if self.tick_times_ms else 0.0
+        failure_rate = (100.0 * self.solve_failures / self.total_solves) if self.total_solves > 0 else 0.0
+        miss_rate = (100.0 * self.deadline_misses / self.total_solves) if self.total_solves > 0 else 0.0
+
+        last_stats = getattr(self.mpc, 'last_solve_stats', {})
+        last_status = last_stats.get('return_status', 'UNKNOWN')
+        last_iters = last_stats.get('iter_count', None)
+
+        self.get_logger().info(
+            f"MPC TIMING: avg_solve={avg_solve:.2f} ms, "
+            f"max_solve={self.max_solve_time_ms:.2f} ms, "
+            f"avg_tick={avg_tick:.2f} ms, "
+            f"max_tick={self.max_tick_time_ms:.2f} ms, "
+            f"budget={self.control_budget_ms:.2f} ms, "
+            f"solves={self.total_solves}, "
+            f"failures={self.solve_failures} ({failure_rate:.1f}%), "
+            f"deadline_misses={self.deadline_misses} ({miss_rate:.1f}%), "
+            f"last_status={last_status}, "
+            f"last_iters={last_iters}",
+        )
+
     # - MAIN CONTROL LOOP -
 
     def _tick(self):
+
+        tick_t0 = time.perf_counter()
 
         if self.estop_active:
             self._hold_estop()
@@ -429,6 +597,8 @@ class MPCController(Node):
             throttle_ub=throttle_cap,
         )
 
+        self._record_solver_stats()
+
         # - POST SOLVE LIMITS -
         MAX_DSTEER = 0.30 # Hard limit on steering rate per tick.
         steer_cmd = clamp(steer_cmd, self.u_prev[0] - MAX_DSTEER, self.u_prev[0] + MAX_DSTEER)
@@ -455,6 +625,43 @@ class MPCController(Node):
             f"throttle command={throttle:.3f}, "
             f"brake command={brake:.3f}, ",
             throttle_duration_sec=0.5,
+        )
+
+        tick_elapsed_ms = (time.perf_counter() - tick_t0) * 1000.0
+        self.tick_times_ms.append(tick_elapsed_ms)
+        self.max_tick_time_ms = max(self.max_tick_time_ms, tick_elapsed_ms)
+        self._log_timing_summary_if_due()
+
+        last_stats = getattr(self.mpc, 'last_solve_stats', {})
+        solve_time_ms = last_stats.get('solve_time_ms', None)
+        solver_success = bool(last_stats.get('success', False))
+        solver_status = last_stats.get('return_status', 'UNKNOWN')
+        solver_iters = last_stats.get('iter_count', None)
+        deadline_miss = (
+            solve_time_ms is not None and solve_time_ms > self.control_budget_ms
+        )
+
+        now_msg = self.get_clock().now().nanoseconds / 1e9
+
+        self._publish_debug(
+            timestamp_sec=now_msg,
+            waypoint_idx=idx,
+            x=x0,
+            y=y0,
+            yaw=yaw0,
+            speed=v0,
+            ref_speed=ref_v[0],
+            cte=cte0,
+            heading_error_rad=he0,
+            steer_cmd=steer_cmd,
+            throttle=throttle,
+            brake=brake,
+            solve_time_ms=solve_time_ms,
+            tick_time_ms=tick_elapsed_ms,
+            solver_success=solver_success,
+            solver_status=solver_status,
+            solver_iters=solver_iters,
+            deadline_miss=deadline_miss,
         )
 
     # - PUBLISH CONTROLCOMMAND AFTER FINAL LIMITING AND CLEANUP -

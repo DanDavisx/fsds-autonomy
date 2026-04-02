@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import math
+import time
 import casadi as ca
 
 from .car_model import KinematicBicycleModel
@@ -56,12 +57,16 @@ class KinematicBicycleMPC:
         self.dt = dt # timestep (s)
         self.target_speed = target_speed
         self._solver = None
+        self.last_solve_stats = {
+            'solve_time_ms': None,
+            'success': False,
+            'return_status': 'NOT_RUN',
+            'iter_count': None,
+        }
         self._build()
 
     def _build(self):
         # Construct the NLP (nonlinear program) using CasAdi.
-        # Everything here is symbolic, so CasAdi builds a computation graph.
-        # The actual numbers are supplied later in solve().
 
         N = self.N
 
@@ -74,12 +79,9 @@ class KinematicBicycleMPC:
         X = ca.SX.sym('X', 4, N + 1)
         U = ca.SX.sym('U', 3, N)
 
-        # - PARAMETER VECTOR - 
-        # Parameters:[x0, y0, yaw0, v0, a_lat_limit,ref_x[0:N], ref_y[0:N], ref_yaw[0:N], ref_v[0:N], ref_kappa[0:N]]
         n_p = 5 + 5 * N
         p = ca.SX.sym('p', n_p)
 
-        # Unpack the parameter vector into named variables
         a_lat_limit = p[4]
         ref_x = p[5 : 5 + N]
         ref_y = p[5 + N : 5 + 2*N]
@@ -88,7 +90,6 @@ class KinematicBicycleMPC:
         ref_kappa = p[5 + 4*N : 5 + 5*N]
 
         # - COST FUNCTION WEIGHTS -
-        # These determine how much the solver cares about each objective.
 
         W_CTE = 3.0 # cross track error 
         W_HEADING = 2.5 # heading alignment with the path
@@ -108,7 +109,6 @@ class KinematicBicycleMPC:
 
         constraints.append(X[:, 0] - p[:4])
 
-        # Prevent any near zero values by flooring lat acceleration limit.
         a_lat_limit_safe = ca.fmax(0.1, a_lat_limit)
 
         # - HORIZON LOOP -
@@ -263,6 +263,8 @@ class KinematicBicycleMPC:
             ubx[base + 1] = throttle_ub
             ubx[base + 2] = brake_ub
 
+        t0 = time.perf_counter()
+
         try:
             sol = self._solver(
                 x0=x0_nlp,
@@ -272,6 +274,20 @@ class KinematicBicycleMPC:
                 ubg=self._ubg,
                 p=p_val,
             )
+            elapsed_ms = (time.perf_counter() - t0) * 1000.0
+
+            stats = self._solver.stats()
+            iter_count = None
+            if isinstance(stats, dict):
+                iter_count = stats.get('iter_count', None)
+
+            self.last_solve_stats = {
+                'solve_time_ms': elapsed_ms,
+                'success': bool(stats.get('success', True)) if isinstance(stats, dict) else True,
+                'return_status': stats.get('return_status', 'UNKNOWN') if isinstance(stats, dict) else 'UNKNOWN',
+                'iter_count': iter_count,
+            }
+
             opt = sol['x'].full().flatten()
             base = self._u_offset
             steer_cmd = float(opt[base])
@@ -283,4 +299,11 @@ class KinematicBicycleMPC:
                 clamp(brake, 0.0, brake_ub),
             )
         except Exception:
+            elapsed_ms = (time.perf_counter() - t0) * 1000.0
+            self.last_solve_stats = {
+                'solve_time_ms': elapsed_ms,
+                'success': False,
+                'return_status': 'EXCEPTION',
+                'iter_count': None,
+            }
             return 0.0, 0.05, 0.0
