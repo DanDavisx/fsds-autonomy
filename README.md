@@ -68,4 +68,4 @@ Parameters can be overriden at launch, for example:
 
 The default parameters have been carefully tested on the provided tracks. Changing them may introduce unexpected behaviour. 
 
-If all goes well, the car SHOULD begin navigating around the ciruit!
+If all goes well, the car SHOULD begin navigating around the circuit.
