@@ -93,16 +93,16 @@ class KinematicBicycleMPC:
 
         W_CTE = 3.0 # cross track error 
         W_HEADING = 2.5 # heading alignment with the path
-        W_SPEED = 1.0 # tracking the speed reference
+        W_SPEED = 3.0 # tracking the speed reference
         W_STEER = 0.5 # steering magnitude
         W_THROTTLE = 0.1 # throttle magnitude
         W_BRAKE = 0.6 # brake magnitude
-        W_DSTEER = 10.0 # steer rate smoothness
+        W_DSTEER = 12.0 # steer rate smoothness
         W_DTHROTTLE = 0.5 # throttle rate
         W_DBRAKE = 6.0 # brake rate
         W_OVERLAP = 8.0 # simultaneous throttle and brake
         W_ALAT_EXCESS = 12.0 # lateral acceleration over the limit
-        W_CURVE_THROTTLE = 0.75 # throttle in high curvature sections
+        W_CURVE_THROTTLE = 3.0 # throttle in high curvature sections
 
         cost = 0.0
         constraints = []
@@ -148,7 +148,12 @@ class KinematicBicycleMPC:
             # - TRACKING COSTS -
             cost += W_CTE * cte ** 2
             cost += W_HEADING * heading_err ** 2
-            cost += W_SPEED * (pv - ref_v[k]) ** 2
+            # OLD cost += W_SPEED * (pv - ref_v[k]) ** 2
+            speed_overshoot = ca.fmax(0.0, pv - ref_v[k])
+            speed_undershoot = ca.fmax(0.0, ref_v[k] - pv)
+
+            cost += W_SPEED * speed_undershoot ** 2
+            cost += 4.0 * W_SPEED * speed_overshoot ** 2
             # - ACTUATOR COSTS -
             cost += W_STEER * con[0] ** 2
             cost += W_THROTTLE * con[1] ** 2

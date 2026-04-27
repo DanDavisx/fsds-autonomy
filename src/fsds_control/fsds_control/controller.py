@@ -198,7 +198,7 @@ class MPCController(Node):
         self.declare_parameter('max_speed', 25.0) # maximumum speed for curvature_to_speed (m/s)
         self.declare_parameter('corner_curvature_threshold', 0.20) # 1/m, for brake blending
         self.declare_parameter('a_lat_max', 2.5) # lateral acceleration limit (m/s^2)
-        self.declare_parameter('speed_lookahead', 25) # number of waypoints to look ahead for speed planning
+        self.declare_parameter('speed_lookahead', 12) # number of waypoints to look ahead for speed planning
         self.declare_parameter('horizon', 25) # MPC prediction horizon steps
         self.declare_parameter('dt', 0.1) # MPC timestep (s)
         self.declare_parameter('rate_hz', 20.0) # control loop rate (hz)
@@ -212,7 +212,7 @@ class MPCController(Node):
         self.declare_parameter('estop_heading_deg', 60.0) # heading error emergency stop threshold (degs)
         self.declare_parameter('estop_stop_steer', 0.0) # to fix steering on stop
 
-        self.declare_parameter('straight_brake_max', 1.0) # max braking on straight
+        self.declare_parameter('straight_brake_max', 0.3) # max braking on straight
         self.declare_parameter('corner_brake_max', 0.15) # max brake mid corner
         self.declare_parameter('brake_rate_up', 0.04) # brake application rate per tick
         self.declare_parameter('brake_rate_down', 0.12) # brake release rate per tick
@@ -527,13 +527,25 @@ class MPCController(Node):
             ref_yaw.append(get_path_tangent_yaw(self.path_xy, ref_idx))
             ref_kappa.append(get_path_curvature(self.path_xy, ref_idx))
 
-            # Speed planning looks further ahead than the tracking horion so
-            # the car brakes before the corner enters the MPC window.
-            kappa_idx = (ref_idx + self.speed_lookahead) % n
-            kappa = get_path_curvature(self.path_xy, kappa_idx)
-            kappa_mag = abs(kappa)
-            lookahead_curvatures.append(kappa)
-            
+            # Speed planning lookahead increases with vehicle speed.
+            # Short speed lookahead at low speed, long speed lookahead at high speed.
+            dynamic_speed_lookahead = int(clamp(v0 * 2.0, 10, 35))
+
+            kappa_start = ref_idx
+            kappa_end = ref_idx + dynamic_speed_lookahead
+
+            kappas = [
+                abs(get_path_curvature(self.path_xy, i % n))
+                for i in range(kappa_start, kappa_end + 1)
+            ]
+
+            kappas_sorted = sorted(kappas, reverse=True)
+            top_n = kappas_sorted[:4]
+
+            kappa_mag = sum(top_n) / max(len(top_n), 1)
+            kappa = kappa_mag
+            lookahead_curvatures.append(kappa_mag)
+                        
             # Speed target
             if kappa_mag < self.brake_curvature_deadband:
                 v_ref_k = self.base_target_speed
@@ -586,7 +598,8 @@ class MPCController(Node):
         top_n = preview_samples[:4]
         preview_curvature = sum(top_n) / max(len(top_n), 1)
         brake_cap = self._compute_brake_limit(preview_curvature, self.u_prev[0])
-        throttle_cap = 0.70 if brake_cap > 0.3 else 0.95
+        # [OLD]throttle_cap = 0.70 if brake_cap > 0.3 else 0.95
+        throttle_cap = 0.25 if preview_curvature > self.brake_curvature_deadband else 0.95
 
         steer_cmd, throttle, brake = self.mpc.solve(
             x0, y0, yaw0, v0,
