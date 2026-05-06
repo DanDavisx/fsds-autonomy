@@ -111,6 +111,7 @@ class TrajectoryPublisher(Node):
         centreline_final = self.resample_by_distance(centreline_smooth, ds=self.ds)
         centreline_final = self.ensure_blue_on_left(centreline_final, self.blue_boundary)
         centreline_final = self.rotate_closed_path_to_start(centreline_final, start_hint)
+        self.save_reference_path(centreline_final, "/home/dan/mpc_eval/reference_trajectory.csv")
 
         # - MESSAGE BUILD -
         self.path_msg = self.build_path(centreline_final)
@@ -154,6 +155,16 @@ class TrajectoryPublisher(Node):
     def _stamp_markers(self, marker_array, stamp):
         for marker in marker_array.markers:
             marker.header.stamp = stamp
+
+    def save_reference_path(self, points_xy, output_path):
+        with open(output_path, "w", newline="") as f:
+            writer = csv.writer(f)
+            writer.writerow(["ref_x", "ref_y"])
+
+            for x, y in points_xy:
+                writer.writerow([x, y])
+
+        self.get_logger().info(f"Saved reference trajectory to {output_path}")
 
     def load_cones(self, csv_path: Path):
         blue, yellow, orange = [], [], []

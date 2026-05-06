@@ -199,7 +199,7 @@ class MPCController(Node):
         self.declare_parameter('corner_curvature_threshold', 0.20) # 1/m, for brake blending
         self.declare_parameter('a_lat_max', 2.5) # lateral acceleration limit (m/s^2)
         self.declare_parameter('speed_lookahead', 12) # number of waypoints to look ahead for speed planning
-        self.declare_parameter('horizon', 25) # MPC prediction horizon steps
+        self.declare_parameter('horizon', 20) # MPC prediction horizon steps
         self.declare_parameter('dt', 0.1) # MPC timestep (s)
         self.declare_parameter('rate_hz', 20.0) # control loop rate (hz)
 
@@ -529,7 +529,7 @@ class MPCController(Node):
 
             # Speed planning lookahead increases with vehicle speed.
             # Short speed lookahead at low speed, long speed lookahead at high speed.
-            dynamic_speed_lookahead = int(clamp(v0 * 2.0, 10, 35))
+            dynamic_speed_lookahead = int(clamp(v0 * 1.5, 8, 30)) # Default - (v0 * 2.0, 10, 35)
 
             kappa_start = ref_idx
             kappa_end = ref_idx + dynamic_speed_lookahead
