@@ -2,6 +2,8 @@
 
 This is a circuit centre line path generator and MPC (model predictive control) controller for the ADS-DV in the Formula Student Driverless Simulator, which can be found here: https://github.com/FS-Driverless/Formula-Student-Driverless-Simulator.
 
+See the full demonstration video here: https://www.youtube.com/watch?v=ya3yy2Hg5Og
+
 Please follow the guidance on the FSDS repo to set up the simulator and WSL here: https://fs-driverless.github.io/Formula-Student-Driverless-Simulator/v2.2.0/. I will not discuss how to set up their simulator here. 
 
 This project omits any form of perception or mapping pipeline, which is why we're generating a centre line from a cone CSV. Subsequently, you won't be able to use this for the DEFAULT simulator maps, only custom ones loaded from a CSV. The default maps are unity asset files and are loaded differently. There is a map builder available that builds circuits and exports them as a cone CSV for FSDS here: https://github.com/mvanlobensels/random-track-generator
